@@ -3,6 +3,7 @@ from pathlib import Path
 import streamlit as st
 import os
 import sqlite3
+import pandas as pd
 from openai import OpenAI
 
 # ---------- PAGE CONFIG ----------
@@ -38,9 +39,43 @@ st.sidebar.caption("LLM Powered Text to SQL")
 # ---------- HEADER ----------
 st.title("🤖 Text to SQL App")
 st.caption(
-    "Ask questions in plain English and get SQL queries generated using LLMs 🚀"
+    "Upload your own CSV and ask questions in plain English to get SQL results 🚀"
 )
 st.markdown("---")
+
+# ---------- CSV TO SQLITE ----------
+def load_csv_to_db(csv_file, db_name="student.db"):
+    try:
+        df = pd.read_csv(csv_file)
+
+        # Normalize column names
+        df.columns = [c.strip().upper() for c in df.columns]
+
+        required_cols = {"NAME", "CLASS", "SECTION", "MARKS"}
+        if not required_cols.issubset(set(df.columns)):
+            st.error("CSV must contain columns: NAME, CLASS, SECTION, MARKS")
+            return False
+
+        conn = sqlite3.connect(db_name)
+        df.to_sql("STUDENT", conn, if_exists="replace", index=False)
+        conn.close()
+        return True
+    except Exception as e:
+        st.error(f"CSV Error: {e}")
+        return False
+
+# ---------- CSV UPLOAD UI ----------
+st.subheader("📂 Upload Student CSV")
+
+uploaded_file = st.file_uploader(
+    "Upload a CSV file (NAME, CLASS, SECTION, MARKS)",
+    type=["csv"]
+)
+
+if uploaded_file:
+    if load_csv_to_db(uploaded_file):
+        st.success("✅ CSV uploaded successfully! You can now ask questions.")
+    st.markdown("---")
 
 # ---------- LLM FUNCTION ----------
 def get_sql_from_text(question):
@@ -70,8 +105,7 @@ SQL:
     sql = sql.replace("```sql", "").replace("```", "").strip()
     return sql
 
-
-# ---------- SQLITE ----------
+# ---------- SQLITE QUERY ----------
 def read_sql_query(sql, db):
     try:
         conn = sqlite3.connect(db)
@@ -84,16 +118,17 @@ def read_sql_query(sql, db):
         st.error(f"SQL Error: {e}")
         return []
 
-# ---------- INPUT ----------
-question = st.text_input(
-    "💬 Enter your question",
-    placeholder="e.g. Show names of students who scored more than 80",
-)
+# ---------- QUESTION INPUT + BUTTON (FORM) ----------
+with st.form("query_form"):
+    question = st.text_input(
+        "💬 Enter your question",
+        placeholder="e.g. Show students who scored more than 80",
+    )
 
-# ---------- BUTTON (CENTERED) ----------
-col1, col2, col3 = st.columns([1, 2, 1])
-with col2:
-    generate = st.button("✨ Generate SQL")
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        generate = st.form_submit_button("✨ Generate SQL")
+
 
 # ---------- ACTION ----------
 if generate and question:
